@@ -19,6 +19,7 @@ import (
 )
 
 type Config struct {
+	DPID           string
 	BOID           string
 	Password       string
 	CRN            string
@@ -108,6 +109,8 @@ type ApplyScripPayloadJSON struct {
 func main() {
 	showIntroMsg()
 
+	clientIdDict := GetClientIds()
+
 	key, keyerror := GetKey()
 	if keyerror != nil {
 		_ = os.Remove("config.json") //since keyerror occurred, we don't have the key for decrypting config, so delete the old config
@@ -135,35 +138,21 @@ func main() {
 	}
 
 	if err != nil { //json read from file is invalid or if file doesn't exist. so ask for user's input
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Println("Enter your BOID: ")
-		boid, _ := reader.ReadString('\n')
-		fmt.Println("Enter your password: ")
-		password, _ := reader.ReadString('\n')
-		fmt.Println("Enter your transaction PIN: ")
-		tpin, _ := reader.ReadString('\n')
-
-		config = Config{
-			BOID:           strings.TrimSpace(boid),
-			Password:       strings.TrimSpace(password),
-			TransactionPIN: strings.TrimSpace(tpin),
-		}
-
-		fmt.Println("PS: Turn the SilentMode field to true in the config.json file if you want to automatically apply using the saved settings")
+		fmt.Println("Config file read error.")
 	}
 
 	if config.BOID == "" {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Println("Enter your BOID: ")
 		boid, _ := reader.ReadString('\n')
-		config.BOID = boid
+		config.BOID = strings.TrimSpace(boid)
 	}
 
 	if config.Password == "" {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Println("Enter your password: ")
 		pwd, _ := reader.ReadString('\n')
-		config.Password = pwd
+		config.Password = strings.TrimSpace(pwd)
 	}
 
 	if config.TransactionPIN == "" {
@@ -171,6 +160,13 @@ func main() {
 		fmt.Println("Enter your transaction PIN: ")
 		tpin, _ := reader.ReadString('\n')
 		config.TransactionPIN = strings.TrimSpace(tpin)
+	}
+
+	if config.DPID == "" {
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Println("Enter your Depository Participant ID: ")
+		dpid, _ := reader.ReadString('\n')
+		config.DPID = strings.TrimSpace(dpid)
 	}
 
 	//ask for default number of kittas to apply
@@ -184,7 +180,10 @@ func main() {
 	}
 
 	//login to get the auth token(JWT)
-	authRequestBody := map[string]interface{}{"clientId": 174, "username": config.BOID, "password": config.Password}
+	clientIdStr := clientIdDict[config.DPID]
+	clientId := 0
+	fmt.Sscan(clientIdStr, &clientId)
+	authRequestBody := map[string]interface{}{"clientId": clientId, "username": config.BOID, "password": config.Password}
 	req, _ := json.Marshal(authRequestBody)
 	resp, err := http.Post("https://webbackend.cdsc.com.np/api/meroShare/auth/", "application/json", bytes.NewBuffer(req))
 	if err != nil {
@@ -407,6 +406,8 @@ func showIntroMsg() {
 	fmt.Println("----------------------------------------------------------------------------")
 	fmt.Println("MeroShareMonitor - Monitor and automatically apply to open IPOs in MeroShare")
 	fmt.Println("----------------------------------------------------------------------------")
+	fmt.Println("PS: Turn the SilentMode field to true in the config.json file if you want to automatically apply using the saved settings")
+	fmt.Println()
 }
 
 func EncryptAES(key []byte, message string) (encoded string, err error) {
@@ -502,4 +503,94 @@ func randString(n int) string {
 		bytes[i] = alphanum[symbol.Int64()]
 	}
 	return string(bytes)
+}
+
+func GetClientIds() map[string]string {
+	//map of "depository participant id" : "clientId"
+	clientIdDict := map[string]string{
+		"13200": "128",
+		"12300": "129",
+		"17200": "130",
+		"11900": "131",
+		"15600": "132",
+		"17500": "201",
+		"14700": "133",
+		"11100": "134",
+		"15000": "135",
+		"16000": "136",
+		"11700": "137",
+		"10100": "138",
+		"13300": "139",
+		"13400": "140",
+		"12000": "141",
+		"14500": "142",
+		"11300": "143",
+		"14900": "144",
+		"10800": "145",
+		"17600": "153",
+		"12200": "151",
+		"11200": "146",
+		"16200": "147",
+		"18000": "681",
+		"17700": "148",
+		"17400": "149",
+		"13100": "150",
+		"17900": "402",
+		"18200": "1182",
+		"14300": "154",
+		"15200": "156",
+		"10700": "157",
+		"13800": "158",
+		"16100": "159",
+		"14100": "155",
+		"16700": "160",
+		"13600": "161",
+		"17300": "162",
+		"12500": "199",
+		"15900": "163",
+		"16800": "198",
+		"15100": "166",
+		"10400": "164",
+		"16400": "165",
+		"15700": "167",
+		"16300": "168",
+		"15500": "169",
+		"15300": "170",
+		"11500": "171",
+		"10200": "172",
+		"10600": "173",
+		"13700": "174",
+		"11000": "175",
+		"11800": "176",
+		"17000": "177",
+		"13900": "178",
+		"12600": "179",
+		"14800": "180",
+		"16900": "181",
+		"15400": "152",
+		"12800": "182",
+		"18600": "1270",
+		"16600": "183",
+		"16500": "184",
+		"18100": "1080",
+		"14400": "185",
+		"15800": "186",
+		"11600": "187",
+		"12700": "188",
+		"18400": "1189",
+		"18500": "1196",
+		"12900": "189",
+		"10900": "190",
+		"14600": "191",
+		"13000": "192",
+		"14000": "193",
+		"14200": "194",
+		"17800": "370",
+		"12400": "195",
+		"18300": "1186",
+		"11400": "196",
+		"17100": "197",
+		"13500": "200",
+	}
+	return clientIdDict
 }
