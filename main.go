@@ -9,13 +9,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"math/big"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -26,7 +29,7 @@ type Config struct {
 	TransactionPIN string
 	DefaultBankID  int
 	DefaultKittas  int
-	SilentMode     bool
+	AskForKittas   bool
 }
 
 type AvailableIssueObject struct {
@@ -107,20 +110,42 @@ type ApplyScripPayloadJSON struct {
 }
 
 func main() {
+
+	addProfileFlag := flag.Bool("add", false, "Add a new profile")
+	flag.Parse()
+
 	showIntroMsg()
 
-	clientIdDict := GetClientIds()
+	files, err := filepath.Glob("./config*.json")
+	if err != nil {
+		panic("Error retrieving config file list!")
+	}
 
-	key, keyerror := GetKey()
+	if *addProfileFlag || len(files) == 0 {
+		DoWork("config" + GetTimestamp() + ".json")
+	} else {
+		for _, file := range files {
+			fmt.Println("Working on ", file)
+			DoWork(file)
+		}
+	}
+
+}
+
+func DoWork(configFileName string) {
+
+	clientIdDict := GetClientIds() //load dpid:clientid dictionary
+
+	key, keyerror := GetKey(configFileName)
 	if keyerror != nil {
-		_ = os.Remove("config.json") //since keyerror occurred, we don't have the key for decrypting config, so delete the old config
+		_ = os.Remove(configFileName) //since keyerror occurred, we don't have the key for decrypting config, so delete the old config
 
-		makeKeyErr := MakeKey()
+		makeKeyErr := MakeKey(configFileName)
 		if makeKeyErr != nil {
 			panic("Could not create key file!") //we won't proceed without creating a key file
 		}
 		var getKeyErr error
-		key, getKeyErr = GetKey()
+		key, getKeyErr = GetKey(configFileName)
 		if getKeyErr != nil {
 			panic("Could not read key file!") //we won't proceed without a key
 		}
@@ -129,7 +154,7 @@ func main() {
 	//at this point, we will have either the old key or a newly created one
 	var config Config
 
-	configContents, err := os.ReadFile("config.json")
+	configContents, err := os.ReadFile(configFileName)
 	if err == nil {
 		err = json.Unmarshal(configContents, &config)                             //read the config file into config variable
 		config.Password, _ = DecryptAES([]byte(key), config.Password)             //decrypt the saved password
@@ -138,7 +163,7 @@ func main() {
 	}
 
 	if err != nil { //json read from file is invalid or if file doesn't exist. so ask for user's input
-		fmt.Println("Config file read error.")
+		fmt.Println("Config profile", configFileName, "file read error.")
 	}
 
 	if config.BOID == "" {
@@ -191,6 +216,23 @@ func main() {
 	}
 	authToken := resp.Header.Get("Authorization")
 
+	//retrieve demat
+	request, _ := http.NewRequest("GET", "https://webbackend.cdsc.com.np/api/meroShare/ownDetail/", nil)
+	request.Header.Add("Authorization", authToken)
+	request.Header.Add("Content-Type", "application/json")
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil || response.StatusCode != 200 {
+		panic("Error getting own details!")
+	}
+	defer response.Body.Close()
+	var ownDetail OwnDetail
+	err = json.NewDecoder(response.Body).Decode(&ownDetail)
+	if err != nil {
+		panic("Error parsing own details JSON!")
+	}
+	fmt.Println("Obtained auth token for ", ownDetail.Name)
+
 	//ask for default bank and its corresponding CRN to apply from
 	if config.DefaultBankID == 0 {
 		//load bank brief
@@ -230,7 +272,7 @@ func main() {
 	encryptedConfig.TransactionPIN, _ = EncryptAES([]byte(key), config.TransactionPIN)
 	encryptedConfig.CRN, _ = EncryptAES([]byte(key), config.CRN)
 	serializedData, _ := json.MarshalIndent(encryptedConfig, "", " ")
-	_ = os.WriteFile("config.json", serializedData, 0666)
+	_ = os.WriteFile(configFileName, serializedData, 0666)
 
 	//landing here means the config variable and the config file are ready
 
@@ -269,11 +311,11 @@ func main() {
 		  }
 		]
 	  }`)
-	request, _ := http.NewRequest("POST", "https://webbackend.cdsc.com.np/api/meroShare/companyShare/applicableIssue/", bytes.NewBuffer(reqBodyForAvailableIssues))
+	request, _ = http.NewRequest("POST", "https://webbackend.cdsc.com.np/api/meroShare/companyShare/applicableIssue/", bytes.NewBuffer(reqBodyForAvailableIssues))
 	request.Header.Add("Authorization", authToken)
 	request.Header.Add("Content-Type", "application/json")
-	client := &http.Client{}
-	response, err := client.Do(request)
+	client = &http.Client{}
+	response, err = client.Do(request)
 	if err != nil || response.StatusCode != 200 {
 		panic("Error getting applicable issues!")
 	}
@@ -305,7 +347,7 @@ func main() {
 
 	scripsToApply := []ScripToApply{}
 	for _, scrip := range availableScrips {
-		if config.SilentMode {
+		if !config.AskForKittas {
 			if scrip.ShareGroupName == "Ordinary Shares" {
 				var scripToApply ScripToApply
 				scripToApply.BankIdToApply = config.DefaultBankID
@@ -354,22 +396,6 @@ func main() {
 		panic("Error parsing bank details JSON!")
 	}
 
-	//retrieve demat from another API call
-	request, _ = http.NewRequest("GET", "https://webbackend.cdsc.com.np/api/meroShare/ownDetail/", nil)
-	request.Header.Add("Authorization", authToken)
-	request.Header.Add("Content-Type", "application/json")
-	client = &http.Client{}
-	response, err = client.Do(request)
-	if err != nil || response.StatusCode != 200 {
-		panic("Error getting own details!")
-	}
-	defer response.Body.Close()
-	var ownDetail OwnDetail
-	err = json.NewDecoder(response.Body).Decode(&ownDetail)
-	if err != nil {
-		panic("Error parsing own details JSON!")
-	}
-
 	//apply to the companies in scripstoApply slice
 	applyReqJson := &ApplyScripPayloadJSON{
 		AccountBranchId: bankDetail.AccountBranchId,
@@ -406,8 +432,7 @@ func showIntroMsg() {
 	fmt.Println("----------------------------------------------------------------------------")
 	fmt.Println("MeroShareMonitor - Monitor and automatically apply to open IPOs in MeroShare")
 	fmt.Println("----------------------------------------------------------------------------")
-	fmt.Println("PS: Turn the SilentMode field to true in the config.json file if you want to automatically apply using the saved settings")
-	fmt.Println()
+	fmt.Println("")
 }
 
 func EncryptAES(key []byte, message string) (encoded string, err error) {
@@ -472,14 +497,16 @@ func DecryptAES(key []byte, secure string) (decoded string, err error) {
 	return string(cipherText), err
 }
 
-func GetKey() ([]byte, error) {
-	keyPath := os.TempDir() + "\\key.dat"
+// reads the key file corresponding to the given profile number
+func GetKey(configFileName string) ([]byte, error) {
+	keyPath := "key_" + configFileName + ".dat"
 	key, err := os.ReadFile(keyPath)
 	return key, err
 }
 
-func MakeKey() error {
-	keyPath := os.TempDir() + "\\key.dat"
+// creates a random 32-digit key and writes to a key file corresponding to the given profile number
+func MakeKey(configFileName string) error {
+	keyPath := "key_" + configFileName + ".dat"
 	randStr := randString(32)
 	error_ := os.WriteFile(keyPath, []byte(randStr), 0644)
 	return error_
@@ -593,4 +620,10 @@ func GetClientIds() map[string]string {
 		"13500": "200",
 	}
 	return clientIdDict
+}
+
+func GetTimestamp() string {
+	now := time.Now()
+	timestamp := now.Unix()
+	return strconv.Itoa(int(timestamp))
 }
