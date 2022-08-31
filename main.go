@@ -118,14 +118,14 @@ func main() {
 
 	files, err := filepath.Glob("./config*.json")
 	if err != nil {
-		panic("Error retrieving config file list!")
+		Panic("Error retrieving config file list!")
 	}
 
 	if *addProfileFlag || len(files) == 0 {
 		DoWork("config" + GetTimestamp() + ".json")
 	} else {
 		for _, file := range files {
-			fmt.Println("Working on ", file)
+			Log(fmt.Sprint("Working on ", file))
 			DoWork(file)
 		}
 	}
@@ -142,12 +142,12 @@ func DoWork(configFileName string) {
 
 		makeKeyErr := MakeKey(configFileName)
 		if makeKeyErr != nil {
-			panic("Could not create key file!") //we won't proceed without creating a key file
+			Panic("Could not create key file!") //we won't proceed without creating a key file
 		}
 		var getKeyErr error
 		key, getKeyErr = GetKey(configFileName)
 		if getKeyErr != nil {
-			panic("Could not read key file!") //we won't proceed without a key
+			Panic("Could not read key file!") //we won't proceed without a key
 		}
 	}
 
@@ -162,13 +162,9 @@ func DoWork(configFileName string) {
 		config.CRN, _ = DecryptAES([]byte(key), config.CRN)                       //decrypt the saved CRN
 	}
 
-	if err != nil { //json read from file is invalid or if file doesn't exist. so ask for user's input
-		fmt.Println("Config profile", configFileName, "file read error.")
-	}
-
 	if config.BOID == "" {
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Println("Enter your BOID: ")
+		fmt.Println("Enter your BOID (last eight digits): ")
 		boid, _ := reader.ReadString('\n')
 		config.BOID = strings.TrimSpace(boid)
 	}
@@ -212,7 +208,7 @@ func DoWork(configFileName string) {
 	req, _ := json.Marshal(authRequestBody)
 	resp, err := http.Post("https://webbackend.cdsc.com.np/api/meroShare/auth/", "application/json", bytes.NewBuffer(req))
 	if err != nil {
-		panic("Error authenticating!")
+		Panic("Error authenticating!")
 	}
 	authToken := resp.Header.Get("Authorization")
 
@@ -223,15 +219,15 @@ func DoWork(configFileName string) {
 	client := &http.Client{}
 	response, err := client.Do(request)
 	if err != nil || response.StatusCode != 200 {
-		panic("Error getting own details!")
+		Panic("Error getting own details!")
 	}
 	defer response.Body.Close()
 	var ownDetail OwnDetail
 	err = json.NewDecoder(response.Body).Decode(&ownDetail)
 	if err != nil {
-		panic("Error parsing own details JSON!")
+		Panic("Error parsing own details JSON!")
 	}
-	fmt.Println("Obtained auth token for ", ownDetail.Name)
+	Log(fmt.Sprint("Obtained auth token for ", ownDetail.Name))
 
 	//ask for default bank and its corresponding CRN to apply from
 	if config.DefaultBankID == 0 {
@@ -241,14 +237,14 @@ func DoWork(configFileName string) {
 		client := &http.Client{}
 		response, err := client.Do(request)
 		if err != nil {
-			panic("Error getting banks!")
+			Panic("Error getting banks!")
 		}
 		defer response.Body.Close()
 
 		var bankBriefs []BankBrief
 		err = json.NewDecoder(response.Body).Decode(&bankBriefs)
 		if err != nil {
-			panic("Error parsing bank briefs JSON!")
+			Panic("Error parsing bank briefs JSON!")
 		}
 		fmt.Println("Please enter the bank ID you'd like to use:")
 		for _, bankBrief := range bankBriefs {
@@ -317,14 +313,14 @@ func DoWork(configFileName string) {
 	client = &http.Client{}
 	response, err = client.Do(request)
 	if err != nil || response.StatusCode != 200 {
-		panic("Error getting applicable issues!")
+		Panic("Error getting applicable issues!")
 	}
 	defer response.Body.Close()
 
 	var responseJson map[string]interface{}
 	err = json.NewDecoder(response.Body).Decode(&responseJson)
 	if err != nil {
-		panic("Error parsing applicable issues JSON!")
+		Panic("Error parsing applicable issues JSON!")
 	}
 
 	//damned conversion from []interface{} to []AvailableIssueObject{}
@@ -333,14 +329,14 @@ func DoWork(configFileName string) {
 	for _, v := range availables {
 		tmp := v.(map[string]interface{})
 		if _, isKeyPresent := tmp["action"]; isKeyPresent { //there's an "action" key if this scrip was already applied to
-			fmt.Println("Skipping recently applied company ", tmp["companyName"].(string))
+			Log(fmt.Sprint("Skipping recently applied company ", tmp["companyName"].(string)))
 			continue
 		}
 		jsonString, _ := json.Marshal(tmp)
 		var availableIssue AvailableIssueObject
 		err := json.Unmarshal(jsonString, &availableIssue)
 		if err != nil {
-			panic("Error parsing available scrips!")
+			Panic("Error parsing available scrips!")
 		}
 		availableScrips = append(availableScrips, availableIssue)
 	}
@@ -357,7 +353,7 @@ func DoWork(configFileName string) {
 				scripsToApply = append(scripsToApply, scripToApply)
 			}
 		} else {
-			fmt.Println(scrip.CompanyName, "-", scrip.ShareGroupName, "(", scrip.IssueOpenDate, "-", scrip.IssueCloseDate, ")")
+			Log(fmt.Sprint(scrip.CompanyName, "-", scrip.ShareGroupName, "(", scrip.IssueOpenDate, "-", scrip.IssueCloseDate, ")"))
 			fmt.Println("Enter the no. of kittas to apply (0 for none): ")
 			reader := bufio.NewReader(os.Stdin)
 			kittasStr, _ := reader.ReadString('\n')
@@ -376,7 +372,7 @@ func DoWork(configFileName string) {
 	}
 
 	if len(scripsToApply) == 0 {
-		fmt.Println("No IPOs open right now. Quitting.")
+		Log(fmt.Sprint("No IPOs open right now. Quitting.\n"))
 		return
 	}
 
@@ -387,13 +383,13 @@ func DoWork(configFileName string) {
 	client = &http.Client{}
 	response, err = client.Do(request)
 	if err != nil || response.StatusCode != 200 {
-		panic("Error getting bank details!")
+		Panic("Error getting bank details!")
 	}
 	defer response.Body.Close()
 	var bankDetail BankDetail
 	err = json.NewDecoder(response.Body).Decode(&bankDetail)
 	if err != nil {
-		panic("Error parsing bank details JSON!")
+		Panic("Error parsing bank details JSON!")
 	}
 
 	//apply to the companies in scripstoApply slice
@@ -413,7 +409,7 @@ func DoWork(configFileName string) {
 
 		reqjson, err := json.Marshal(applyReqJson)
 		if err != nil {
-			fmt.Println("Cannot build apply JSON payload!")
+			Log("Cannot build apply JSON payload!")
 		}
 		request, _ = http.NewRequest("POST", "https://webbackend.cdsc.com.np/api/meroShare/applicantForm/share/apply", bytes.NewBuffer(reqjson))
 		request.Header.Add("Authorization", authToken)
@@ -421,18 +417,20 @@ func DoWork(configFileName string) {
 		client = &http.Client{}
 		response, err = client.Do(request)
 		if err != nil || response.StatusCode != 201 {
-			panic("Error applying to scrip!")
+			Log(fmt.Sprint("Error applying to scrip - ", scrip.CompanyName))
 		} else {
-			fmt.Println("Applied ", applyReqJson.AppliedKitta, " kittas to - ", scrip.CompanyName)
+			Log(fmt.Sprint("Applied ", applyReqJson.AppliedKitta, " kittas to - ", scrip.CompanyName))
 		}
 	}
+
+	//closing tag
+	Log("\n")
 }
 
 func showIntroMsg() {
-	fmt.Println("----------------------------------------------------------------------------")
-	fmt.Println("MeroShareMonitor - Monitor and automatically apply to open IPOs in MeroShare")
-	fmt.Println("----------------------------------------------------------------------------")
-	fmt.Println("")
+	Log("----------------------------------------------------------------------------")
+	Log("MeroShareMonitor - Monitor and automatically apply to open IPOs in MeroShare")
+	Log("----------------------------------------------------------------------------")
 }
 
 func EncryptAES(key []byte, message string) (encoded string, err error) {
@@ -626,4 +624,22 @@ func GetTimestamp() string {
 	now := time.Now()
 	timestamp := now.Unix()
 	return strconv.Itoa(int(timestamp))
+}
+
+func Log(msg string) {
+	fmt.Println(msg)
+	file, err := os.OpenFile("MeroshareMonitor-Log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Cannot write to log file!")
+	} else {
+		t := time.Now()
+		timestamp := t.Format("2006-01-02 03:04:05 PM")
+		file.WriteString("[" + timestamp + "] " + msg + "\n")
+	}
+
+}
+
+func Panic(msg string) {
+	Log(msg)
+	panic(msg)
 }
