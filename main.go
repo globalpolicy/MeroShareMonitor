@@ -60,8 +60,8 @@ type ScripToApply struct {
 type BankDetail struct {
 	AccountBranchId int
 	AccountNumber   string
-	BankId          int
-	BranchID        int
+	AccountTypeId   int
+	AccountTypeName string
 	BranchName      string
 	Id              int
 }
@@ -386,11 +386,15 @@ func DoWork(configFileName string) {
 		Panic("Error getting bank details!")
 	}
 	defer response.Body.Close()
-	var bankDetail BankDetail
-	err = json.NewDecoder(response.Body).Decode(&bankDetail)
+
+	var bankDetails []BankDetail
+	err = json.NewDecoder(response.Body).Decode(&bankDetails)
 	if err != nil {
 		Panic("Error parsing bank details JSON!")
 	}
+
+	//take the first element of the JSON array, which is the required BankDetail JSON object
+	bankDetail := bankDetails[0]
 
 	//apply to the companies in scripstoApply slice
 	applyReqJson := &ApplyScripPayloadJSON{
