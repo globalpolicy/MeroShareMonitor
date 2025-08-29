@@ -100,6 +100,7 @@ type ApplyScripPayloadJSON struct {
 	AccountBranchId int    `json:"accountBranchId"`
 	AccountNumber   string `json:"accountNumber"`
 	AppliedKitta    string `json:"appliedKitta"`
+	AccountTypeId   int    `json:"accountTypeId"`
 	BankId          int    `json:"bankId"`
 	Boid            string `json:"boid"`
 	CompanyShareId  string `json:"companyShareId"`
@@ -400,6 +401,7 @@ func DoWork(configFileName string) {
 	applyReqJson := &ApplyScripPayloadJSON{
 		AccountBranchId: bankDetail.AccountBranchId,
 		AccountNumber:   bankDetail.AccountNumber,
+		AccountTypeId:   bankDetail.AccountTypeId,
 		Boid:            ownDetail.Boid,
 		CrnNumber:       config.CRN,
 		Demat:           ownDetail.Demat,
